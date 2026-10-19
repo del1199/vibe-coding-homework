@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roguelite 戰術卡牌模擬戰鬥</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&family=Orbitron:wght@600;800;900&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Noto Sans TC', 'sans-serif'],
+                        display: ['Orbitron', 'Noto Sans TC', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            dark: '#080B10',
+                            panel: '#111827',
+                            border: '#1F293D',
+                            card: '#1A2333',
+                            neonRed: '#FF2A5F',
+                            neonPurple: '#A855F7',
+                            neonGreen: '#10B981',
+                            neonYellow: '#F59E0B',
+                            neonCyan: '#06B6D4',
+                            neonBlue: '#3B82F6'
+                        }
+                    },
+                    boxShadow: {
+                        'neon-red': '0 0 15px rgba(255, 42, 95, 0.4)',
+                        'neon-purple': '0 0 15px rgba(168, 85, 247, 0.4)',
+                        'neon-blue': '0 0 15px rgba(59, 130, 246, 0.4)',
+                        'neon-gold': '0 0 15px rgba(245, 158, 11, 0.4)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #080B10;
+            color: #E2E8F0;
+            font-family: 'Noto Sans TC', sans-serif;
+            user-select: none;
+        }
+
+        /* 自訂滾動條 */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #080B10; }
+        ::-webkit-scrollbar-thumb { background: #1F293D; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3B82F6; }
+
+        /* 傷害飄字動畫 */
+        @keyframes floatDamage {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            40% { opacity: 1; transform: translateY(-35px) scale(1.35); }
+            100% { opacity: 0; transform: translateY(-70px) scale(0.9); }
+        }
+        .damage-number {
+            position: absolute;
+            animation: floatDamage 1.2s ease-out forwards;
+            font-family: 'Orbitron', 'Noto Sans TC', sans-serif;
+            font-weight: 900;
+            text-shadow: 0 0 8px rgba(0,0,0,0.9), 0 0 4px currentColor;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        /* 受擊震動閃爍特效 */
+        @keyframes hitShake {
+            0% { transform: translate(0, 0) scale(1); filter: brightness(1); }
+            20% { transform: translate(-8px, 4px) scale(0.97); filter: brightness(2) drop-shadow(0 0 15px #FF2A5F); }
+            40% { transform: translate(8px, -4px) scale(1.02); }
+            60% { transform: translate(-4px, -2px); }
+            80% { transform: translate(4px, 2px); }
+            100% { transform: translate(0, 0) scale(1); filter: brightness(1); }
+        }
+        .hit-shake {
+            animation: hitShake 0.4s ease-in-out;
+        }
+
+        /* 卡牌打出衝擊動畫 */
+        @keyframes playCardAnim {
+            0% { transform: scale(1) translateY(0); opacity: 1; }
+            50% { transform: scale(1.15) translateY(-30px); opacity: 0.9; box-shadow: 0 0 25px rgba(168, 85, 247, 0.8); }
+            100% { transform: scale(0.3) translateY(-100px); opacity: 0; }
+        }
+        .playing-card {
+            animation: playCardAnim 0.45s ease-out forwards;
+        }
+
+        /* 拖曳狀態樣式 */
+        .dragging {
+            opacity: 0.4;
+            transform: scale(0.95);
+            border-style: dashed !important;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-brand-neonRed selection:text-white">
+
+    <!-- 頂部資訊與功能導覽列 -->
+    <header class="border-b border-brand-border bg-brand-panel/90 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-neonRed via-brand-neonPurple to-brand-neonBlue flex items-center justify-center text-white text-lg shadow-neon-purple">
+                    <i class="fa-solid fa-cards"></i>
+                </div>
+                <div>
+                    <h1 class="font-display font-extrabold text-base sm:text-lg tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">
+                        ROGUELITE <span class="text-brand-neonRed">戰術卡牌模擬戰鬥</span>
+                    </h1>
+                    <p class="text-[10px] text-slate-400">Turn-Based Tactical Card Combat Engine</p>
+                </div>
+            </div>
+
+            <!-- 右側戰鬥控制與牌堆按鈕 -->
+            <div class="flex items-center space-x-2 text-xs">
+                <button onclick="openModal('deckModal')" class="px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition flex items-center space-x-1.5">
+                    <i class="fa-solid fa-layer-group text-brand-neonCyan"></i>
+                    <span>牌組檢視 (<span id="totalDeckSize">12</span>)</span>
+                </button>
+                <button onclick="openModal('settingsModal')" class="px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition flex items-center space-x-1.5">
+                    <i class="fa-solid fa-sliders text-brand-neonYellow"></i>
+                    <span>戰鬥設定</span>
+                </button>
+                <button onclick="restartBattle()" class="px-2.5 py-1.5 rounded-lg border border-red-500/40 bg-red-950/30 hover:bg-red-900/50 text-red-300 transition flex items-center space-x-1.5">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span>重新開局</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主戰鬥區域 (Grid Layout) -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+
+        <!-- 左半邊：戰鬥舞台 (角色 vs Boss + 意圖) [7 欄] -->
+        <section class="lg:col-span-7 space-y-4">
+
+            <!-- 戰鬥舞台背景區 -->
+            <div class="relative bg-gradient-to-b from-slate-950 via-brand-panel to-slate-950 border border-brand-border rounded-2xl p-4 sm:p-6 shadow-2xl min-h-[300px] flex flex-col justify-between overflow-hidden">
+                
+                <!-- 頂部回合與階段指示器 -->
+                <div class="flex items-center justify-between z-10">
+                    <div class="flex items-center space-x-2">
+                        <span class="px-3 py-1 bg-slate-900/90 border border-brand-border rounded-full font-display font-bold text-xs text-brand-neonYellow">
+                            第 <span id="turnCounter">1</span> 回合
+                        </span>
+                        <span id="phaseBadge" class="px-2.5 py-1 bg-purple-950/80 border border-purple-800/50 rounded-full text-[11px] font-bold text-purple-300">
+                            玩家配置階段
+                        </span>
+                    </div>
+
+                    <!-- 敵方意圖預告 (Intent) -->
+                    <div id="enemyIntentBox" class="flex items-center space-x-2 bg-slate-900/90 border border-red-500/40 px-3 py-1.5 rounded-xl shadow-neon-red">
+                        <span class="text-xs text-slate-400">Boss 下回合意圖:</span>
+                        <span id="intentIcon" class="text-sm text-red-400"><i class="fa-solid fa-sword"></i></span>
+                        <span id="intentText" class="font-bold text-xs text-red-300">重擊 12 點傷害</span>
+                    </div>
+                </div>
+
+                <!-- 戰鬥雙方舞台 (Player vs Boss) -->
+                <div class="grid grid-cols-2 gap-4 my-6 items-center z-10 relative">
+                    
+                    <!-- 飄動數字產生容器 -->
+                    <div id="floatDamageLayer" class="absolute inset-0 pointer-events-none overflow-hidden z-30"></div>
+
+                    <!-- 1. 玩家單位 (Hero Unit) -->
+                    <div id="playerUnit" class="flex flex-col items-center p-3 rounded-xl transition-all">
+                        <!-- 狀態 Buff 列表 -->
+                        <div id="playerBuffs" class="flex flex-wrap justify-center gap-1 min-h-[22px] mb-2"></div>
+                        
+                        <!-- 玩家 Avatar -->
+                        <div class="relative group">
+                            <div class="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-blue-900 to-indigo-600 border-2 border-brand-neonBlue flex items-center justify-center text-3xl sm:text-4xl text-white shadow-neon-blue">
+                                <i class="fa-solid fa-shield-halved"></i>
+                            </div>
+                            <!-- 護盾徽章 -->
+                            <div id="playerShieldBadge" class="hidden absolute -top-2 -right-2 bg-blue-600 border border-blue-300 text-white font-mono font-bold text-xs px-2 py-0.5 rounded-full shadow-lg">
+                                <i class="fa-solid fa-shield mr-0.5"></i><span id="playerShieldText">0</span>
+                            </div>
+                        </div>
+
+                        <!-- 玩家名稱與血條 -->
+                        <div class="w-full max-w-[180px] text-center mt-3 space-y-1">
+                            <div class="flex justify-between text-xs font-mono">
+                                <span class="font-bold text-slate-300">防禦者 (You)</span>
+                                <span id="playerHpText" class="text-emerald-400 font-bold">80 / 80</span>
+                            </div>
+                            <div class="w-full bg-slate-900 rounded-full h-3 overflow-hidden p-0.5 border border-slate-800">
+                                <div id="playerHpBar" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-300" style="width: 100%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Boss 單位 (Enemy Unit) -->
+                    <div id="bossUnit" class="flex flex-col items-center p-3 rounded-xl transition-all">
+                        <!-- 狀態 Buff 列表 -->
+                        <div id="bossBuffs" class="flex flex-wrap justify-center gap-1 min-h-[22px] mb-2"></div>
+
+                        <!-- Boss Avatar -->
+                        <div class="relative group">
+                            <div id="bossIcon" class="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-tr from-red-950 via-slate-900 to-purple-950 border-2 border-brand-neonRed flex items-center justify-center text-3xl sm:text-4xl text-red-500 shadow-neon-red transition-transform">
+                                <i class="fa-solid fa-dragon"></i>
+                            </div>
+                            <!-- 護盾徽章 -->
+                            <div id="bossShieldBadge" class="hidden absolute -top-2 -right-2 bg-blue-600 border border-blue-300 text-white font-mono font-bold text-xs px-2 py-0.5 rounded-full shadow-lg">
+                                <i class="fa-solid fa-shield mr-0.5"></i><span id="bossShieldText">0</span>
+                            </div>
+                        </div>
+
+                        <!-- Boss 名稱與血條 -->
+                        <div class="w-full max-w-[180px] text-center mt-3 space-y-1">
+                            <div class="flex justify-between text-xs font-mono">
+                                <span id="bossNameDisplay" class="font-bold text-red-400">暗黑深淵霸主</span>
+                                <span id="bossHpText" class="text-red-400 font-bold">150 / 150</span>
+                            </div>
+                            <div class="w-full bg-slate-900 rounded-full h-3 overflow-hidden p-0.5 border border-slate-800">
+                                <div id="bossHpBar" class="bg-gradient-to-r from-red-600 via-pink-600 to-amber-500 h-full rounded-full transition-all duration-300" style="width: 100%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- 戰鬥底部資訊列 (能量數值與牌堆數計) -->
+                <div class="flex items-center justify-between pt-3 border-t border-slate-800/80 z-10">
+                    <!-- 能量指示器 -->
+                    <div class="flex items-center space-x-2">
+                        <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center text-slate-950 font-display font-black text-lg shadow-neon-gold">
+                            <i class="fa-solid fa-bolt"></i>
+                        </div>
+                        <div>
+                            <div class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">本回合可用能量</div>
+                            <div class="font-display font-extrabold text-base text-amber-300">
+                                <span id="currentEnergy">3</span> / <span id="maxEnergy">3</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 三大牌堆計數 -->
+                    <div class="flex items-center space-x-3 text-xs font-mono">
+                        <div class="flex items-center space-x-1 text-slate-400" title="抽牌堆">
+                            <i class="fa-solid fa-box-archive text-brand-neonCyan"></i>
+                            <span>抽牌: <strong id="drawPileCount" class="text-slate-200">0</strong></span>
+                        </div>
+                        <div class="flex items-center space-x-1 text-slate-400" title="棄牌堆">
+                            <i class="fa-solid fa-recycle text-brand-neonYellow"></i>
+                            <span>棄牌: <strong id="discardPileCount" class="text-slate-200">0</strong></span>
+                        </div>
+                        <div class="flex items-center space-x-1 text-slate-400" title="消耗堆">
+                            <i class="fa-solid fa-fire text-red-400"></i>
+                            <span>消耗: <strong id="exhaustPileCount" class="text-slate-200">0</strong></span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 戰鬥日誌 (Combat Log) -->
+            <div class="bg-brand-panel border border-brand-border rounded-xl p-3 shadow-lg">
+                <div class="flex items-center justify-between mb-2 pb-1 border-b border-slate-800">
+                    <span class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center">
+                        <i class="fa-solid fa-terminal text-brand-neonPurple mr-1.5"></i>戰鬥歷程紀錄 (Combat Log)
+                    </span>
+                    <button onclick="clearCombatLog()" class="text-[10px] text-slate-500 hover:text-slate-300">清空紀錄</button>
+                </div>
+                <div id="combatLog" class="h-28 overflow-y-auto space-y-1 font-mono text-[11px] text-slate-400 pr-1">
+                    <div class="text-slate-600">&gt; 戰鬥開始！敵人出現，請規劃您的出牌順序。</div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- 右半邊：手牌配置與出牌順序 controls [5 欄] -->
+        <section class="lg:col-span-5 space-y-4">
+
+            <!-- 1. 手牌出牌順序規劃面板 -->
+            <div class="bg-brand-panel border border-brand-border rounded-2xl p-4 shadow-xl space-y-3">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div>
+                        <h2 class="font-display font-bold text-sm text-slate-200 flex items-center">
+                            <i class="fa-solid fa-arrow-down-1-9 text-brand-neonCyan mr-2"></i>本回合手牌 (按出牌順序排列)
+                        </h2>
+                        <p class="text-[11px] text-slate-400">可用 ◄ ► 箭頭或拖曳調整卡牌優先打出順序</p>
+                    </div>
+                    <!-- 結束回合按鈕 -->
+                    <button id="endTurnBtn" onclick="executePlayerTurn()" class="px-4 py-2.5 bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 hover:from-purple-500 hover:to-red-500 text-white font-display font-bold text-xs tracking-wider rounded-xl shadow-neon-purple transition transform active:scale-95 flex items-center space-x-1.5">
+                        <i class="fa-solid fa-play"></i>
+                        <span>結束回合</span>
+                    </button>
+                </div>
+
+                <!-- 手牌卡牌清單 (動態渲染) -->
+                <div id="handListContainer" class="space-y-2.5 min-h-[310px]">
+                    <!-- 手牌卡牌將以列表形式被渲染於此 -->
+                </div>
+            </div>
+
+            <!-- 2. 即時預估試算面板 -->
+            <div class="bg-brand-panel border border-brand-border rounded-xl p-3.5 space-y-2">
+                <div class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                    <span><i class="fa-solid fa-calculator text-brand-neonYellow mr-1.5"></i>本回合卡牌試算總結</span>
+                    <span id="energyCheckBadge" class="text-[10px] px-2 py-0.5 rounded font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">能量足夠</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2 text-center text-xs font-mono pt-1">
+                    <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                        <div class="text-[10px] text-slate-500">預計造成傷害</div>
+                        <div id="previewDamage" class="text-base font-bold text-red-400">0</div>
+                    </div>
+                    <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                        <div class="text-[10px] text-slate-500">預計獲得護盾</div>
+                        <div id="previewShield" class="text-base font-bold text-blue-400">0</div>
+                    </div>
+                    <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                        <div class="text-[10px] text-slate-500">消耗總能量</div>
+                        <div id="previewEnergy" class="text-base font-bold text-amber-300">0 / 3</div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- 彈出視窗 Modal 1: 牌組與棄牌堆檢視 Modal -->
+    <div id="deckModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-brand-panel border border-brand-border rounded-2xl max-w-2xl w-full p-5 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="font-display font-bold text-base text-slate-200 flex items-center">
+                    <i class="fa-solid fa-cards text-brand-neonCyan mr-2"></i>玩家全部牌組內容
+                </h3>
+                <button onclick="closeModal('deckModal')" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="deckModalContent" class="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-3 p-1">
+                <!-- 牌組內容動態產生 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 彈出視窗 Modal 2: 戰鬥與敵人設定 Modal -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-brand-panel border border-brand-border rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="font-display font-bold text-base text-slate-200 flex items-center">
+                    <i class="fa-solid fa-sliders text-brand-neonYellow mr-2"></i>戰鬥難度與 Boss 設定
+                </h3>
+                <button onclick="closeModal('settingsModal')" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-400 mb-1">Boss 最大血量 (HP)</label>
+                    <input type="number" id="settingBossHp" value="150" min="20" max="2000" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200">
+                </div>
+                <div>
+                    <label class="block text-slate-400 mb-1">玩家最大能量 (Max Energy)</label>
+                    <input type="number" id="settingMaxEnergy" value="3" min="1" max="10" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200">
+                </div>
+                <div>
+                    <label class="block text-slate-400 mb-1">玩家起始最大血量</label>
+                    <input type="number" id="settingPlayerHp" value="80" min="10" max="500" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-200">
+                </div>
+            </div>
+            <button onclick="applySettings()" class="w-full py-2.5 bg-brand-neonPurple hover:bg-purple-600 text-white font-bold rounded-xl transition">
+                儲存設定並重新開局
+            </button>
+        </div>
+    </div>
+
+    <!-- 頁尾 -->
+    <footer class="border-t border-brand-border bg-brand-panel/40 py-3 text-center text-xs text-slate-500">
+        Roguelite Deckbuilding Combat Simulation Engine &bull; Vibe Coding 作業提交單一 index.html
+    </footer>
+
+    <!-- JavaScript 遊戲核心引擎 -->
+    <script>
+        // --- 1. 卡牌數據庫定義 ---
+        const CARD_DEFINITIONS = {
+            'strike': { id: 'strike', name: '打擊', type: 'Attack', cost: 1, dmg: 6, shield: 0, hits: 1, desc: '造成 6 點傷害。', color: 'border-red-500/50 text-red-400' },
+            'heavy_strike': { id: 'heavy_strike', name: '重擊', type: 'Attack', cost: 2, dmg: 14, shield: 0, hits: 1, desc: '造成 14 點傷害。', color: 'border-orange-500/50 text-orange-400' },
+            'twin_strike': { id: 'twin_strike', name: '雙重打擊', type: 'Attack', cost: 2, dmg: 8, shield: 0, hits: 2, desc: '造成 8 點傷害 x 2 次。', color: 'border-amber-500/50 text-amber-400' },
+            'defend': { id: 'defend', name: '防禦', type: 'Skill', cost: 1, dmg: 0, shield: 8, hits: 0, desc: '獲得 8 點護盾。', color: 'border-blue-500/50 text-blue-400' },
+            'iron_wave': { id: 'iron_wave', name: '鐵浪斬', type: 'Attack', cost: 1, dmg: 5, shield: 5, hits: 1, desc: '造成 5 點傷害，獲得 5 點護盾。', color: 'border-cyan-500/50 text-cyan-400' },
+            'warcry': { id: 'warcry', name: '戰吼', type: 'Power', cost: 1, dmg: 0, shield: 0, hits: 0, buff: { type: 'str', value: 3 }, desc: '獲得 +3 力量 (增加攻擊傷害)。', color: 'border-purple-500/50 text-purple-400' },
+            'vulnerable_bash': { id: 'vulnerable_bash', name: '痛擊', type: 'Attack', cost: 2, dmg: 10, shield: 0, hits: 1, debuff: { type: 'vuln', turns: 2 }, desc: '造成 10 點傷害，給予 2 回合易傷 (受傷+50%)。', color: 'border-pink-500/50 text-pink-400' },
+            'energy_drink': { id: 'energy_drink', name: '能量飲料', type: 'Skill', cost: 0, dmg: 0, shield: 0, hits: 0, energyGain: 1, desc: '回復 1 點能量。', color: 'border-yellow-400/50 text-yellow-300' },
+            'well_prepared': { id: 'well_prepared', name: '充分準備', type: 'Skill', cost: 1, dmg: 0, shield: 0, hits: 0, drawGain: 2, desc: '立即抽 2 張牌。', color: 'border-emerald-400/50 text-emerald-300' }
+        };
+
+        // 初始套牌組成 (14張牌，包含新卡)
+        const INITIAL_DECK_KEYS = [
+            'strike', 'strike', 'strike', 'strike', 'heavy_strike',
+            'defend', 'defend', 'defend', 'iron_wave',
+            'twin_strike', 'warcry', 'vulnerable_bash',
+            'energy_drink', 'well_prepared'
+        ];
+
+        // --- 2. 全局遊戲狀態變數 ---
+        let masterDeck = [];     // 玩家所有牌組
+        let drawPile = [];       // 抽牌堆
+        let hand = [];           // 當前手牌 (按照玩家排序)
+        let discardPile = [];    // 棄牌堆
+        let exhaustPile = [];    // 消耗堆
+
+        let player = {
+            maxHp: 80,
+            hp: 80,
+            shield: 0,
+            energy: 3,
+            maxEnergy: 3,
+            strength: 0,
+            vulnerable: 0
+        };
+
+        let boss = {
+            name: '暗黑深淵霸主',
+            maxHp: 150,
+            hp: 150,
+            shield: 0,
+            strength: 0,
+            vulnerable: 0,
+            intent: null // 下回合意圖
+        };
+
+        let turnCount = 1;
+        let isExecutingTurn = false; // 是否正處於自動出牌動畫中
+        let draggedIndex = null;     // 拖曳卡牌索引
+
+        // --- 3. 初始化與開局邏輯 ---
+        window.addEventListener('DOMContentLoaded', () => {
+            initGame();
+        });
+
+        function initGame() {
+            // 建構初始牌組
+            masterDeck = INITIAL_DECK_KEYS.map((key, index) => ({
+                ...CARD_DEFINITIONS[key],
+                uniqueId: `card_${index}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`
+            }));
+
+            // 重置狀態
+            player.hp = player.maxHp;
+            player.shield = 0;
+            player.strength = 0;
+            player.vulnerable = 0;
+            player.energy = player.maxEnergy;
+
+            boss.hp = boss.maxHp;
+            boss.shield = 0;
+            boss.strength = 0;
+            boss.vulnerable = 0;
+
+            turnCount = 1;
+            isExecutingTurn = false;
+
+            // 洗牌並抽 5 張
+            drawPile = shuffle([...masterDeck]);
+            discardPile = [];
+            exhaustPile = [];
+            hand = [];
+
+            generateBossIntent();
+            startNewTurn();
+            updateAllUI();
+            logCombat('&gt; 戰鬥初始化完成，請規劃您的出牌順序並點擊「結束回合」。');
+        }
+
+        function restartBattle() {
+            initGame();
+        }
+
+        // 開始新回合
+        function startNewTurn() {
+            player.energy = player.maxEnergy;
+            player.shield = 0; // 護盾每回合歸零
+
+            // 扣除玩家 Buff/Debuff 回合數
+            if (player.vulnerable > 0) player.vulnerable--;
+            
+            // BUG FIX 2: 扣除 Boss 的 Debuff 易傷持續回合數
+            if (boss.vulnerable > 0) {
+                boss.vulnerable--;
+                if (boss.vulnerable === 0) {
+                    logCombat('&gt; Boss 的易傷效果已結束。');
+                }
+            }
+
+            // 抽 5 張牌
+            drawCards(5);
+
+            updateAllUI();
+        }
+
+        // 抽牌邏輯 (包含棄牌堆重洗)
+        function drawCards(count) {
+            for (let i = 0; i < count; i++) {
+                if (drawPile.length === 0) {
+                    if (discardPile.length === 0) break; // 沒牌可抽
+                    drawPile = shuffle([...discardPile]);
+                    discardPile = [];
+                    logCombat('&gt; 抽牌堆已空，洗洗棄牌堆重新作為抽牌堆。');
+                }
+                hand.push(drawPile.pop());
+            }
+        }
+
+        // 洗牌演算法 (Fisher-Yates)
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // 生成 Boss 意圖
+        function generateBossIntent() {
+            const intents = [
+                { type: 'attack', dmg: 10, hits: 1, text: '重擊 10 點傷害', icon: '<i class="fa-solid fa-sword"></i>' },
+                { type: 'attack_multi', dmg: 4, hits: 3, text: '瘋狂連擊 4x3 傷害', icon: '<i class="fa-solid fa-swords"></i>' },
+                { type: 'defend', shield: 12, text: '深淵護甲 (+12 護盾)', icon: '<i class="fa-solid fa-shield"></i>' },
+                { type: 'buff', str: 2, text: '邪惡吟唱 (+2 力量)', icon: '<i class="fa-solid fa-hat-wizard"></i>' }
+            ];
+
+            // 隨機抽選
+            boss.intent = intents[Math.floor(Math.random() * intents.length)];
+        }
+
+        // --- 4. 出牌順序控制與拖曳排序 ---
+
+        function moveHandCard(index, direction) {
+            if (isExecutingTurn) return;
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= hand.length) return;
+            const temp = hand[index];
+            hand[index] = hand[newIndex];
+            hand[newIndex] = temp;
+            renderHandList();
+            updateCalculationsPreview();
+        }
+
+        // BUG FIX 1: HTML5 Native Drag & Drop Handlers
+        function handleDragStart(e, index) {
+            if (isExecutingTurn) return;
+            draggedIndex = index;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', index);
+            setTimeout(() => {
+                const cardEl = document.getElementById(`card-item-${hand[index].uniqueId}`);
+                if (cardEl) cardEl.classList.add('dragging');
+            }, 0);
+        }
+
+        function handleDragOver(e, index) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        function handleDrop(e, targetIndex) {
+            e.preventDefault();
+            if (draggedIndex === null || draggedIndex === targetIndex || isExecutingTurn) return;
+
+            // 重新排列手牌陣列
+            const draggedCard = hand[draggedIndex];
+            hand.splice(draggedIndex, 1);
+            hand.splice(targetIndex, 0, draggedCard);
+
+            draggedIndex = null;
+            renderHandList();
+            updateCalculationsPreview();
+        }
+
+        function handleDragEnd() {
+            draggedIndex = null;
+            renderHandList();
+        }
+
+        async function executePlayerTurn() {
+            if (isExecutingTurn) return;
+            isExecutingTurn = true;
+
+            const endTurnBtn = document.getElementById('endTurnBtn');
+            endTurnBtn.disabled = true;
+            endTurnBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            logCombat(`&gt; <span class="text-brand-neonPurple font-bold">--- 回合 ${turnCount} 玩家出牌階段開始 ---</span>`);
+
+            let currentEnergy = player.energy;
+
+            // 複製手牌清單進行依序結算
+            const cardsToPlay = [...hand];
+
+            for (let i = 0; i < cardsToPlay.length; i++) {
+                const card = cardsToPlay[i];
+
+                // 檢查能量是否足夠
+                if (currentEnergy < card.cost) {
+                    logCombat(`&gt; 能量不足 (${currentEnergy}/${card.cost})，跳過打出【${card.name}】。`);
+                    continue;
+                }
+
+                // 扣能量
+                currentEnergy -= card.cost;
+                player.energy = currentEnergy;
+
+                // 高亮當前打出的卡牌 UI
+                highlightPlayingCardUI(card.uniqueId);
+
+                // 觸發卡牌效果
+                await playSingleCardEffects(card);
+
+                // 將卡牌移出手牌並進入棄牌堆
+                hand = hand.filter(c => c.uniqueId !== card.uniqueId);
+                discardPile.push(card);
+
+                updateAllUI();
+                await sleep(500); // 停頓0.5秒以利觀看戰鬥視覺特效
+            }
+
+            // 剩餘手牌全部棄掉
+            while (hand.length > 0) {
+                discardPile.push(hand.pop());
+            }
+
+            updateAllUI();
+
+            // 檢查 Boss 是否死亡
+            if (boss.hp <= 0) {
+                logCombat(`&gt; <span class="text-emerald-400 font-bold">★ 戰鬥勝利！BOSS 已被成功討伐！</span>`);
+                alert('恭喜你！成功討伐 Boss 獲得戰鬥勝利！');
+                isExecutingTurn = false;
+                endTurnBtn.disabled = false;
+                endTurnBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                return;
+            }
+
+            // 進入 Boss 回合
+            await sleep(600);
+            await executeBossTurn();
+
+            // 檢查玩家是否死亡
+            if (player.hp <= 0) {
+                logCombat(`&gt; <span class="text-red-500 font-bold">☠ 戰鬥失敗！防禦者已被擊敗...</span>`);
+                alert('戰鬥失敗！你已被 Boss 擊敗。點擊重置按鈕重新挑戰。');
+                isExecutingTurn = false;
+                endTurnBtn.disabled = false;
+                endTurnBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                return;
+            }
+
+            // 開始下一個回合
+            turnCount++;
+            generateBossIntent();
+            startNewTurn();
+
+            isExecutingTurn = false;
+            endTurnBtn.disabled = false;
+            endTurnBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        // 單張卡牌效果執行與傷害計算
+        async function playSingleCardEffects(card) {
+            // 能量飲料: 回復能量
+            if (card.energyGain && card.energyGain > 0) {
+                player.energy += card.energyGain;
+                logCombat(`&gt; 打出【${card.name}】，回復 <span class="text-amber-300 font-bold">${card.energyGain}</span> 點能量！`);
+            }
+
+            // 充分準備: 抽牌
+            if (card.drawGain && card.drawGain > 0) {
+                drawCards(card.drawGain);
+                logCombat(`&gt; 打出【${card.name}】，補充抽了 <span class="text-emerald-300 font-bold">${card.drawGain}</span> 張牌！`);
+            }
+
+            // 護盾效果
+            if (card.shield > 0) {
+                player.shield += card.shield;
+                logCombat(`&gt; 打出【${card.name}】，獲得 <span class="text-blue-400 font-bold">${card.shield}</span> 點護盾。`);
+            }
+
+            // 傷害效果 (攻擊)
+            if (card.dmg > 0) {
+                for (let h = 0; h < card.hits; h++) {
+                    let baseDmg = card.dmg + player.strength;
+                    if (boss.vulnerable > 0) baseDmg = Math.floor(baseDmg * 1.5); // 易傷 1.5x
+
+                    let actualDmg = baseDmg;
+
+                    // 扣除 Boss 護盾
+                    if (boss.shield > 0) {
+                        if (boss.shield >= actualDmg) {
+                            boss.shield -= actualDmg;
+                            actualDmg = 0;
+                        } else {
+                            actualDmg -= boss.shield;
+                            boss.shield = 0;
+                        }
+                    }
+
+                    boss.hp = Math.max(0, boss.hp - actualDmg);
+
+                    // 觸發 Boss 受擊動畫與飄字
+                    triggerHitAnimation('bossUnit', baseDmg, false);
+                    logCombat(`&gt; 打出【${card.name}】，對 Boss 造成 <span class="text-red-400 font-bold">${baseDmg}</span> 點傷害！`);
+                    await sleep(250);
+                }
+            }
+
+            // Buff / Debuff 效果
+            if (card.buff && card.buff.type === 'str') {
+                player.strength += card.buff.value;
+                logCombat(`&gt; 打出【${card.name}】，力量提升 +${card.buff.value}！`);
+            }
+
+            if (card.debuff && card.debuff.type === 'vuln') {
+                boss.vulnerable += card.debuff.turns;
+                logCombat(`&gt; 打出【${card.name}】，賦予 Boss ${card.debuff.turns} 回合易傷狀態！`);
+            }
+        }
+
+        // --- 6. Boss 回合執行邏輯 ---
+        async function executeBossTurn() {
+            logCombat(`&gt; <span class="text-red-400 font-bold">--- Boss 回合開始 ---</span>`);
+            const intent = boss.intent;
+
+            if (intent.type === 'attack' || intent.type === 'attack_multi') {
+                const hits = intent.hits || 1;
+                for (let h = 0; h < hits; h++) {
+                    let baseDmg = intent.dmg + boss.strength;
+                    if (player.vulnerable > 0) baseDmg = Math.floor(baseDmg * 1.5);
+
+                    let actualDmg = baseDmg;
+
+                    // 扣除玩家護盾
+                    if (player.shield > 0) {
+                        if (player.shield >= actualDmg) {
+                            player.shield -= actualDmg;
+                            actualDmg = 0;
+                        } else {
+                            actualDmg -= player.shield;
+                            player.shield = 0;
+                        }
+                    }
+
+                    player.hp = Math.max(0, player.hp - actualDmg);
+                    triggerHitAnimation('playerUnit', baseDmg, true);
+                    logCombat(`&gt; Boss 發動攻擊，造成玩家 <span class="text-red-400 font-bold">${baseDmg}</span> 點傷害！`);
+                    updateAllUI();
+                    await sleep(300);
+                }
+            } else if (intent.type === 'defend') {
+                boss.shield += intent.shield;
+                logCombat(`&gt; Boss 施加護盾，獲得 <span class="text-blue-400 font-bold">${intent.shield}</span> 點護盾！`);
+            } else if (intent.type === 'buff') {
+                boss.strength += intent.str;
+                logCombat(`&gt; Boss 蓄力狂暴，力量 +${intent.str}！`);
+            }
+
+            updateAllUI();
+        }
+
+        // --- 7. UI 渲染與更新邏輯 ---
+
+        function updateAllUI() {
+            // 1. 更新玩家數據
+            document.getElementById('playerHpText').textContent = `${player.hp} / ${player.maxHp}`;
+            document.getElementById('playerHpBar').style.width = `${Math.max(0, (player.hp / player.maxHp) * 100)}%`;
+            
+            const pShieldBadge = document.getElementById('playerShieldBadge');
+            if (player.shield > 0) {
+                pShieldBadge.classList.remove('hidden');
+                document.getElementById('playerShieldText').textContent = player.shield;
+            } else {
+                pShieldBadge.classList.add('hidden');
+            }
+
+            // 玩家 Buff 標籤
+            let pBuffsHtml = '';
+            if (player.strength > 0) pBuffsHtml += `<span class="px-2 py-0.5 text-[10px] bg-amber-950 text-amber-300 border border-amber-800 rounded">力量 +${player.strength}</span>`;
+            if (player.vulnerable > 0) pBuffsHtml += `<span class="px-2 py-0.5 text-[10px] bg-red-950 text-red-300 border border-red-800 rounded">易傷 (${player.vulnerable}回合)</span>`;
+            document.getElementById('playerBuffs').innerHTML = pBuffsHtml;
+
+            // 2. 更新 Boss 數據
+            document.getElementById('bossNameDisplay').textContent = boss.name;
+            document.getElementById('bossHpText').textContent = `${boss.hp} / ${boss.maxHp}`;
+            document.getElementById('bossHpBar').style.width = `${Math.max(0, (boss.hp / boss.maxHp) * 100)}%`;
+
+            const bShieldBadge = document.getElementById('bossShieldBadge');
+            if (boss.shield > 0) {
+                bShieldBadge.classList.remove('hidden');
+                document.getElementById('bossShieldText').textContent = boss.shield;
+            } else {
+                bShieldBadge.classList.add('hidden');
+            }
+
+            // Boss Buff 標籤
+            let bBuffsHtml = '';
+            if (boss.strength > 0) bBuffsHtml += `<span class="px-2 py-0.5 text-[10px] bg-amber-950 text-amber-300 border border-amber-800 rounded">力量 +${boss.strength}</span>`;
+            if (boss.vulnerable > 0) bBuffsHtml += `<span class="px-2 py-0.5 text-[10px] bg-red-950 text-red-300 border border-red-800 rounded">易傷 (${boss.vulnerable}回合)</span>`;
+            document.getElementById('bossBuffs').innerHTML = bBuffsHtml;
+
+            // Boss 意圖
+            if (boss.intent) {
+                document.getElementById('intentIcon').innerHTML = boss.intent.icon;
+                document.getElementById('intentText').textContent = boss.intent.text;
+            }
+
+            // 3. 回合與能量
+            document.getElementById('turnCounter').textContent = turnCount;
+            document.getElementById('currentEnergy').textContent = player.energy;
+            document.getElementById('maxEnergy').textContent = player.maxEnergy;
+
+            // 4. 牌堆數量
+            document.getElementById('drawPileCount').textContent = drawPile.length;
+            document.getElementById('discardPileCount').textContent = discardPile.length;
+            document.getElementById('exhaustPileCount').textContent = exhaustPile.length;
+            document.getElementById('totalDeckSize').textContent = masterDeck.length;
+
+            // 5. 渲染手牌清單與計算試算
+            renderHandList();
+            updateCalculationsPreview();
+        }
+
+        // 渲染手牌區域
+        function renderHandList() {
+            const container = document.getElementById('handListContainer');
+            if (!container) return;
+
+            if (hand.length === 0) {
+                container.innerHTML = `<div class="p-8 text-center text-slate-500 border border-dashed border-slate-800 rounded-xl text-xs">手牌已空 (請結束回合以進入下一輪)</div>`;
+                return;
+            }
+
+            container.innerHTML = hand.map((card, index) => {
+                const isFirst = index === 0;
+                const isLast = index === hand.length - 1;
+
+                return `
+                    <div id="card-item-${card.uniqueId}" 
+                         draggable="true" 
+                         ondragstart="handleDragStart(event, ${index})" 
+                         ondragover="handleDragOver(event, ${index})" 
+                         ondrop="handleDrop(event, ${index})" 
+                         ondragend="handleDragEnd()" 
+                         class="flex items-center justify-between p-3 bg-brand-card border ${card.color} rounded-xl shadow-md transition-all hover:border-slate-400 cursor-grab active:cursor-grabbing select-none">
+                        <div class="flex items-center space-x-3 pointer-events-none">
+                            <i class="fa-solid fa-grip-vertical text-slate-600 mr-1 text-xs"></i>
+                            <span class="w-6 h-6 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center font-display font-bold text-xs text-amber-400">
+                                ${card.cost}
+                            </span>
+                            <div>
+                                <div class="font-bold text-xs text-slate-200 flex items-center space-x-2">
+                                    <span>${card.name}</span>
+                                    <span class="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 uppercase">${card.type}</span>
+                                </div>
+                                <div class="text-[11px] text-slate-400">${card.desc}</div>
+                            </div>
+                        </div>
+
+                        <!-- 調整打出順序按鈕 -->
+                        <div class="flex items-center space-x-1">
+                            <button onclick="moveHandCard(${index}, -1)" ${isFirst ? 'disabled class="opacity-30 cursor-not-allowed text-slate-600 px-1.5 py-1"' : 'class="text-slate-400 hover:text-cyan-400 px-1.5 py-1 bg-slate-800 rounded transition"'}>
+                                <i class="fa-solid fa-chevron-up"></i>
+                            </button>
+                            <button onclick="moveHandCard(${index}, 1)" ${isLast ? 'disabled class="opacity-30 cursor-not-allowed text-slate-600 px-1.5 py-1"' : 'class="text-slate-400 hover:text-cyan-400 px-1.5 py-1 bg-slate-800 rounded transition"'}>
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 高亮打出中的卡牌動畫
+        function highlightPlayingCardUI(uniqueId) {
+            const cardEl = document.getElementById(`card-item-${uniqueId}`);
+            if (cardEl) {
+                cardEl.classList.add('playing-card');
+            }
+        }
+
+        // 受擊震撼與浮動傷害數字
+        function triggerHitAnimation(targetId, damageValue, isPlayer) {
+            const targetEl = document.getElementById(targetId);
+            if (targetEl) {
+                targetEl.classList.remove('hit-shake');
+                void targetEl.offsetWidth; // 觸發 reflow 重新播放動畫
+                targetEl.classList.add('hit-shake');
+            }
+
+            // 產生飄浮數字
+            const floatLayer = document.getElementById('floatDamageLayer');
+            if (floatLayer && targetEl) {
+                const numEl = document.createElement('div');
+                numEl.className = `damage-number ${isPlayer ? 'text-red-500' : 'text-amber-400'} text-xl sm:text-2xl`;
+                numEl.textContent = `-${damageValue}`;
+                
+                // 設定彈出位置
+                const leftPos = isPlayer ? '20%' : '70%';
+                numEl.style.left = leftPos;
+                numEl.style.top = '40%';
+
+                floatLayer.appendChild(numEl);
+
+                setTimeout(() => {
+                    numEl.remove();
+                }, 1200);
+            }
+        }
+
+        // 預估本回合打出總數據 (支援動態能量加成計算)
+        function updateCalculationsPreview() {
+            let totalDmg = 0;
+            let totalShield = 0;
+            let totalCost = 0;
+            let remEnergy = player.energy;
+
+            hand.forEach(card => {
+                if (remEnergy >= card.cost) {
+                    remEnergy -= card.cost;
+                    totalCost += card.cost;
+
+                    // 若為能量飲料，預估加回能量
+                    if (card.energyGain) {
+                        remEnergy += card.energyGain;
+                    }
+
+                    totalShield += card.shield;
+
+                    if (card.dmg > 0) {
+                        let singleDmg = card.dmg + player.strength;
+                        if (boss.vulnerable > 0) singleDmg = Math.floor(singleDmg * 1.5);
+                        totalDmg += singleDmg * card.hits;
+                    }
+                }
+            });
+
+            document.getElementById('previewDamage').textContent = totalDmg;
+            document.getElementById('previewShield').textContent = totalShield;
+            document.getElementById('previewEnergy').textContent = `${totalCost} / ${player.energy}`;
+
+            const badge = document.getElementById('energyCheckBadge');
+            if (totalCost > player.energy && remEnergy < 0) {
+                badge.textContent = "能量將超載";
+                badge.className = "text-[10px] px-2 py-0.5 rounded font-mono bg-red-950 text-red-300 border border-red-800";
+            } else {
+                badge.textContent = "順序規劃良好";
+                badge.className = "text-[10px] px-2 py-0.5 rounded font-mono bg-emerald-950 text-emerald-300 border border-emerald-800";
+            }
+        }
+
+        function logCombat(text) {
+            const combatLog = document.getElementById('combatLog');
+            const entry = document.createElement('div');
+            entry.innerHTML = text;
+            combatLog.prepend(entry);
+        }
+
+        function clearCombatLog() {
+            document.getElementById('combatLog').innerHTML = '';
+        }
+
+        // --- Modal 彈出視窗輔助 ---
+        function openModal(id) {
+            if (id === 'deckModal') renderDeckModalContent();
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function renderDeckModalContent() {
+            const container = document.getElementById('deckModalContent');
+            container.innerHTML = masterDeck.map(card => `
+                <div class="p-2.5 bg-slate-900 border ${card.color} rounded-xl text-xs space-y-1">
+                    <div class="flex justify-between font-bold">
+                        <span>${card.name}</span>
+                        <span class="text-amber-300 font-mono">${card.cost} 費</span>
+                    </div>
+                    <p class="text-[10px] text-slate-400">${card.desc}</p>
+                </div>
+            `).join('');
+        }
+
+        function applySettings() {
+            boss.maxHp = parseInt(document.getElementById('settingBossHp').value) || 150;
+            player.maxEnergy = parseInt(document.getElementById('settingMaxEnergy').value) || 3;
+            player.maxHp = parseInt(document.getElementById('settingPlayerHp').value) || 80;
+            closeModal('settingsModal');
+            restartBattle();
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+    </script>
+</body>
+</html>
